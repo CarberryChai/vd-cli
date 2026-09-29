@@ -1,0 +1,52 @@
+{
+ "code": 0,
+ "message": "OK",
+ "ttl": 1,
+ "data": {
+  "has_more": true,
+  "media_list": [
+   {
+    "id": 3001,
+    "title": "整页失效 A",
+    "page": 1,
+    "attr": 1,
+    "cover": "http://x.jpg",
+    "intro": "简介",
+    "pubtime": 1600000000,
+    "upper": {
+     "mid": 1000,
+     "name": "合集UP"
+    },
+    "pages": [
+     {
+      "id": 9101,
+      "page": 1,
+      "title": "P1",
+      "duration": 10
+     }
+    ]
+   },
+   {
+    "id": 3002,
+    "title": "整页失效 B",
+    "page": 1,
+    "attr": 1,
+    "cover": "http://x.jpg",
+    "intro": "简介",
+    "pubtime": 1600000000,
+    "upper": {
+     "mid": 1000,
+     "name": "合集UP"
+    },
+    "pages": [
+     {
+      "id": 9102,
+      "page": 1,
+      "title": "P1",
+      "duration": 10
+     }
+    ]
+   }
+  ]
+ }
+}

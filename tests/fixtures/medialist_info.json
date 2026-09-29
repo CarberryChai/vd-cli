@@ -1,0 +1,29 @@
+{
+ "code": 0,
+ "message": "OK",
+ "ttl": 1,
+ "data": {
+  "id": 2045,
+  "type": 8,
+  "title": "测试合集",
+  "intro": "合集简介",
+  "ctime": 1600000000,
+  "mtime": 1600000001,
+  "state": 0,
+  "cover": "http://x.jpg",
+  "mid": 23630128,
+  "upper": {
+   "mid": 23630128,
+   "name": "合集UP"
+  },
+  "stat": {
+   "view": 1,
+   "favorite": 1,
+   "reply": 0,
+   "share": 0,
+   "like": 0,
+   "mtime": 1600000001,
+   "ctime": 1600000000
+  }
+ }
+}

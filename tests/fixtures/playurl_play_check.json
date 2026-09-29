@@ -1,0 +1,15 @@
+{
+ "code": 0,
+ "message": "OK",
+ "data": {
+  "dash": {
+   "duration": 100,
+   "video": [],
+   "audio": []
+  },
+  "play_check": {
+   "limit_play_reason": 87008,
+   "limit_play_reason_msg": "应版权方要求，无法播放"
+  }
+ }
+}

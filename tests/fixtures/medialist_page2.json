@@ -1,0 +1,31 @@
+{
+ "code": 0,
+ "message": "OK",
+ "ttl": 1,
+ "data": {
+  "has_more": false,
+  "media_list": [
+   {
+    "id": 2004,
+    "title": "合集第三集",
+    "page": 1,
+    "attr": 0,
+    "cover": "http://x.jpg",
+    "intro": "简介",
+    "pubtime": 1600000000,
+    "upper": {
+     "mid": 1000,
+     "name": "合集UP"
+    },
+    "pages": [
+     {
+      "id": 9005,
+      "page": 1,
+      "title": "第三集",
+      "duration": 120
+     }
+    ]
+   }
+  ]
+ }
+}

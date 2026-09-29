@@ -1,0 +1,30 @@
+{
+ "data": {
+  "from": "local",
+  "result": "suee",
+  "quality": 32,
+  "format": "flv",
+  "timelength": 120000,
+  "accept_quality": [
+   32,
+   16
+  ],
+  "durl": [
+   {
+    "order": 1,
+    "length": 60000,
+    "size": 5000000,
+    "url": "https://upos-sz-mirrorali.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s",
+    "backup_url": [
+     "https://upos-sz-mirrorcos.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s"
+    ]
+   },
+   {
+    "order": 2,
+    "length": 60000,
+    "size": 5000000,
+    "url": "https://upos-sz-mirrorali.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s"
+   }
+  ]
+ }
+}

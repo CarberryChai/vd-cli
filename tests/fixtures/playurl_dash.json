@@ -1,0 +1,182 @@
+{
+ "data": {
+  "from": "local",
+  "result": "suee",
+  "message": "",
+  "quality": 32,
+  "format": "mp4",
+  "timelength": 226000,
+  "accept_format": "hd720,hd480,mp4",
+  "accept_quality": [
+   80,
+   64,
+   32,
+   16
+  ],
+  "support_formats": [
+   {
+    "quality": 80,
+    "new_description": "1080P 高清",
+    "codecs": null
+   }
+  ],
+  "dash": {
+   "duration": 226,
+   "minBufferTime": 1.5,
+   "video": [
+    {
+     "id": 80,
+     "base_url": "https://upos-sz-mirrorali.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s",
+     "baseUrl": "https://upos-sz-mirrorali.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s",
+     "backup_url": [
+      "https://upos-sz-mirrorcos.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s"
+     ],
+     "bandwidth": 1500000,
+     "mimeType": "video/mp4",
+     "codecs": "avc1.640028",
+     "width": 1920,
+     "height": 1080,
+     "frameRate": "16000/672",
+     "frame_rate": "16000/672",
+     "size": 42000000,
+     "codecid": 7,
+     "startWithSap": 1,
+     "segment_base": {
+      "initialization": "0-734"
+     }
+    },
+    {
+     "id": 80,
+     "base_url": "https://upos-sz-mirrorali.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s",
+     "baseUrl": "https://upos-sz-mirrorali.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s",
+     "backup_url": [
+      "https://upos-sz-mirrorcos.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s"
+     ],
+     "bandwidth": 900000,
+     "mimeType": "video/mp4",
+     "codecs": "avc1.640028",
+     "width": 1920,
+     "height": 1080,
+     "frameRate": 30,
+     "frame_rate": 30,
+     "size": 25000000,
+     "codecid": 12,
+     "startWithSap": 1,
+     "segment_base": {
+      "initialization": "0-734"
+     }
+    },
+    {
+     "id": 64,
+     "base_url": "https://upos-sz-mirrorali.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s",
+     "baseUrl": "https://upos-sz-mirrorali.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s",
+     "backup_url": [
+      "https://upos-sz-mirrorcos.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s"
+     ],
+     "bandwidth": 800000,
+     "mimeType": "video/mp4",
+     "codecs": "avc1.640028",
+     "width": 1280,
+     "height": 720,
+     "frameRate": 30,
+     "frame_rate": 30,
+     "size": 22000000,
+     "codecid": 7,
+     "startWithSap": 1,
+     "segment_base": {
+      "initialization": "0-734"
+     }
+    },
+    {
+     "id": 16,
+     "base_url": "http://1.2.3.4:8080/upgcxcode/63/10/220355130/220355130-1-30080.m4s",
+     "baseUrl": "https://upos-sz-mirrorali.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s",
+     "backup_url": [],
+     "bandwidth": 300000,
+     "mimeType": "video/mp4",
+     "codecs": "avc1.640028",
+     "width": 640,
+     "height": 360,
+     "frameRate": 30,
+     "frame_rate": 30,
+     "size": 8000000,
+     "codecid": 7,
+     "startWithSap": 1,
+     "segment_base": {
+      "initialization": "0-734"
+     }
+    }
+   ],
+   "audio": [
+    {
+     "id": 30280,
+     "base_url": "https://upos-sz-mirrorali.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s",
+     "baseUrl": "https://upos-sz-mirrorali.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s",
+     "backup_url": [
+      "https://upos-sz-mirrorcos.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s"
+     ],
+     "bandwidth": 132000,
+     "mimeType": "audio/mp4",
+     "codecs": "mp4a.40.2",
+     "startWithSap": 1
+    },
+    {
+     "id": 30232,
+     "base_url": "https://upos-sz-mirrorali.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s",
+     "baseUrl": "https://upos-sz-mirrorali.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s",
+     "backup_url": [
+      "https://upos-sz-mirrorcos.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s"
+     ],
+     "bandwidth": 66000,
+     "mimeType": "audio/mp4",
+     "codecs": "mp4a.40.5",
+     "startWithSap": 1
+    },
+    {
+     "id": 30250,
+     "base_url": "https://upos-sz-mirrorali.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s",
+     "baseUrl": "https://upos-sz-mirrorali.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s",
+     "backup_url": [
+      "https://upos-sz-mirrorcos.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s"
+     ],
+     "bandwidth": 449000,
+     "mimeType": "audio/mp4",
+     "codecs": "ec-3",
+     "startWithSap": 1
+    }
+   ],
+   "dolby": {
+    "type": 1,
+    "audio": [
+     {
+      "id": 30250,
+      "base_url": "https://upos-sz-mirrorali.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s",
+      "baseUrl": "https://upos-sz-mirrorali.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s",
+      "backup_url": [
+       "https://upos-sz-mirrorcos.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s"
+      ],
+      "bandwidth": 448000,
+      "mimeType": "audio/mp4",
+      "codecs": "ec-3",
+      "startWithSap": 1
+     }
+    ]
+   },
+   "flac": {
+    "display": true,
+    "audio": {
+     "id": 30251,
+     "base_url": "https://upos-sz-mirrorali.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s",
+     "baseUrl": "https://upos-sz-mirrorali.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s",
+     "backup_url": [
+      "https://upos-sz-mirrorcos.bilivideo.com/upgcxcode/63/10/220355130/220355130-1-30080.m4s"
+     ],
+     "bandwidth": 1400000,
+     "mimeType": "audio/mp4",
+     "codecs": "fLaC",
+     "startWithSap": 1
+    }
+   }
+  }
+ }
+}

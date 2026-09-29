@@ -1,0 +1,38 @@
+{
+ "code": 0,
+ "message": "OK",
+ "ttl": 1,
+ "data": {
+  "bvid": "BV1xx411c7mD",
+  "aid": 2,
+  "videos": 1,
+  "copyright": 1,
+  "title": "字幕君交流场所",
+  "pic": "http://i0.hdslb.com/bfs/archive/x.jpg",
+  "pubdate": 1500000000,
+  "ctime": 1500000000,
+  "desc": "单 P 视频，pages[0].part 是无意义占位符",
+  "duration": 120,
+  "owner": {
+   "mid": 2,
+   "name": "UP主名称",
+   "face": "http://x.jpg"
+  },
+  "pages": [
+   {
+    "cid": 1001,
+    "page": 1,
+    "from": "vupload",
+    "part": "P1",
+    "duration": 120,
+    "vid": "",
+    "weblink": "",
+    "dimension": {
+     "width": 1920,
+     "height": 1080,
+     "rotate": 0
+    }
+   }
+  ]
+ }
+}

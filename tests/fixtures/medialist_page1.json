@@ -1,0 +1,79 @@
+{
+ "code": 0,
+ "message": "OK",
+ "ttl": 1,
+ "data": {
+  "has_more": true,
+  "media_list": [
+   {
+    "id": 2001,
+    "title": "合集第一集",
+    "page": 1,
+    "attr": 0,
+    "cover": "http://x.jpg",
+    "intro": "简介",
+    "pubtime": 1600000000,
+    "upper": {
+     "mid": 1000,
+     "name": "合集UP"
+    },
+    "pages": [
+     {
+      "id": 9001,
+      "page": 1,
+      "title": "第一集",
+      "duration": 100
+     }
+    ]
+   },
+   {
+    "id": 2002,
+    "title": "已失效的稿件",
+    "page": 1,
+    "attr": 1,
+    "cover": "http://x.jpg",
+    "intro": "简介",
+    "pubtime": 1600000000,
+    "upper": {
+     "mid": 1000,
+     "name": "合集UP"
+    },
+    "pages": [
+     {
+      "id": 9002,
+      "page": 1,
+      "title": "P1",
+      "duration": 50
+     }
+    ]
+   },
+   {
+    "id": 2003,
+    "title": "合集第二集",
+    "page": 2,
+    "attr": 0,
+    "cover": "http://x.jpg",
+    "intro": "简介",
+    "pubtime": 1600000000,
+    "upper": {
+     "mid": 1000,
+     "name": "合集UP"
+    },
+    "pages": [
+     {
+      "id": 9003,
+      "page": 1,
+      "title": "第二集",
+      "duration": 110
+     },
+     {
+      "id": 9004,
+      "page": 2,
+      "title": "第二集下",
+      "duration": 90
+     }
+    ]
+   }
+  ]
+ }
+}
