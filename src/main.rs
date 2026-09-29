@@ -79,8 +79,12 @@ async fn run(cli: Cli) -> Result<u8> {
     }
 
     // UA 在进程内固定
-    let ua = pick_user_agent();
-    let api = Api::new(Bases::default(), &ua, cli.cookie.as_deref())?;
+    let ua = vd_cli::api::pick_user_agent();
+    let mut api = Api::new(Bases::default(), ua, cli.cookie.as_deref())?;
+
+    // 取流接口要求带前端指纹 cookie buvid3，缺了会拿到风控响应（code: 0 + v_voucher）。
+    // download 与 mux 都要用补齐后的 Cookie，所以必须在建这些之前做。
+    api.ensure_buvid3().await;
 
     // ---- 2/3. resolve + 取任务列表 ----
     let target = resolve_target(&api, &cli.input).await?;
@@ -469,16 +473,6 @@ fn print_summary(cli: &Cli, container: &str, pages: &[Page], items: &[Item], fai
         (_, 0) => {}
         (ok, f) => eprintln!("完成 {ok} 个，失败 {f} 个"),
     }
-}
-
-fn pick_user_agent() -> String {
-    use rand::seq::SliceRandom;
-    let mut rng = rand::thread_rng();
-    vd_cli::api::USER_AGENTS
-        .choose(&mut rng)
-        .copied()
-        .unwrap_or("Mozilla/5.0")
-        .to_string()
 }
 
 /// 解析输入；`b23.tv` 短链逐跳跟随重定向，每跳都校验 host。

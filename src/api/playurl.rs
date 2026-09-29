@@ -77,14 +77,17 @@ impl Api {
              &fnval={fnval}&fnver=0&fourk=1&otype=json&qn={qn}&wts={}",
             wbi::now_unix()
         );
-        // 无 Cookie 且非 DRM 时追加 try_look=1
-        if self.cookie().is_none() {
+        // 用户没给 Cookie（未登录）时追加 try_look=1，允许试看
+        if self.user_cookie().is_none() {
             query.push_str("&try_look=1");
         }
         let query = wbi::sign(&query, mixin_key);
         let url = format!("{}/x/player/wbi/playurl?{query}", self.bases().api);
 
         let resp = self.get_json(&url).await?;
+        if resp["data"]["v_voucher"].is_string() {
+            tracing::debug!("playurl(qn={qn}) 被风控拦截（data 里只有 v_voucher）");
+        }
         parse_playurl(&resp, cid)
     }
 }

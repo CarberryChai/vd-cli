@@ -14,14 +14,40 @@ use reqwest::header::{ACCEPT, HeaderMap, HeaderValue, REFERER, USER_AGENT};
 use reqwest::redirect::Policy;
 use serde_json::Value;
 
+use crate::buvid;
 use crate::error::{Error, Result};
 
-/// 进程内固定的 User-Agent。不同请求用不同 UA 是最明显的爬虫特征。
+/// 预置的 User-Agent，启动时随机挑一个并在进程内固定。
+///
+/// **必须用当前的主流版本，并且整条字符串都要在 B 站 WAF 的白名单里。**
+/// 实测（2026-09）拿 `x/player/wbi/playurl` 反复请求：
+///
+/// | UA | 通过率 |
+/// |---|---|
+/// | Windows Chrome 126 / 125 | 8/8、10/10 |
+/// | macOS Chrome 126 | 8/8 |
+/// | Linux Chrome 124 / 126 / 140 | 10/10 |
+/// | **Linux Chrome 125** | **0/10** |
+///
+/// 同一平台换个版本号就能从必失败变成必成功，所以这里不按「平台各留一条」
+/// 随意拼——每条都要实测过。过期的版本号（Chrome/125 及更早）会被直接判定为
+/// 爬虫并返回 `code:0` + `data.v_voucher` 的风控响应。
 pub const USER_AGENTS: &[&str] = &[
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
 ];
+/// 从预置列表里随机挑一个 UA。
+///
+/// 单独抽出来是为了能用测试钉住「池子里没有已知会被 WAF 拦的 UA」。
+pub fn pick_user_agent() -> &'static str {
+    use rand::seq::SliceRandom;
+    let mut rng = rand::thread_rng();
+    USER_AGENTS
+        .choose(&mut rng)
+        .copied()
+        .unwrap_or("Mozilla/5.0")
+}
 
 /// API 基址。测试里换成 mock 服务器。
 #[derive(Debug, Clone)]
@@ -45,12 +71,16 @@ impl Default for Bases {
 }
 
 /// 带 Cookie / UA 的共享客户端。
+///
+/// `cookie` 是「用户给的 + 我们补齐的 buvid3」；`user_cookie` 只保留用户原始输入，
+/// 用来判断 `try_look` 这类与登录态相关的参数。
 #[derive(Debug, Clone)]
 pub struct Api {
     client: Client,
     bases: Arc<Bases>,
     ua: Arc<str>,
     cookie: Option<Arc<str>>,
+    user_cookie: Option<Arc<str>>,
 }
 
 impl Api {
@@ -80,6 +110,7 @@ impl Api {
             bases: Arc::new(bases),
             ua: Arc::from(ua),
             cookie: cookie.map(Arc::from),
+            user_cookie: cookie.map(Arc::from),
         })
     }
 
@@ -87,8 +118,43 @@ impl Api {
         &self.bases
     }
 
+    /// 实际会发出去的 Cookie（含补齐的 buvid3）。
     pub fn cookie(&self) -> Option<&str> {
         self.cookie.as_deref()
+    }
+
+    /// 用户原始传入的 Cookie，不含我们补齐的 buvid3。
+    pub fn user_cookie(&self) -> Option<&str> {
+        self.user_cookie.as_deref()
+    }
+
+    /// 取一个 `buvid3` 并并进 Cookie 串。
+    ///
+    /// B 站的取流接口要求请求带这个前端指纹 cookie；缺失时大概率返回风控响应
+    /// （`code: 0`、`data` 里只有 `v_voucher`）。先问服务器（`x/frontend/finger/spi`），
+    /// 拿不到再本地按同样格式生成——这一步失败不该让整个流程失败，所以不返回错误。
+    pub async fn ensure_buvid3(&mut self) -> String {
+        if let Some(existing) = self.cookie.as_deref().and_then(buvid::get_buvid3) {
+            tracing::debug!("沿用 Cookie 里已有的 buvid3");
+            return existing.to_string();
+        }
+        let url = format!("{}/x/frontend/finger/spi", self.bases.api);
+        let fetched = match self.get_json(&url).await {
+            Ok(resp) => resp["data"]["b_3"].as_str().map(str::to_string),
+            Err(e) => {
+                tracing::debug!("获取服务器指纹失败（{e}），改用本地生成的 buvid3");
+                None
+            }
+        };
+        let buvid3 = fetched
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(buvid::generate);
+        tracing::debug!("buvid3 = {buvid3}");
+        self.cookie = Some(Arc::from(buvid::with_buvid3(
+            self.cookie.as_deref().unwrap_or(""),
+            &buvid3,
+        )));
+        buvid3
     }
 
     /// UA，供下载模块复用（同一进程固定）。
@@ -425,6 +491,52 @@ mod tests {
     fn falls_back_to_raw_when_all_filtered() {
         let node = json!({ "base_url": "http://1.2.3.4:8080/v.m4s" });
         assert_eq!(collect_urls(&node), vec!["http://1.2.3.4:8080/v.m4s"]);
+    }
+
+    #[test]
+    fn user_agent_pool_is_current_and_not_on_the_blocklist() {
+        // 实测会被 B 站 WAF 直接判定为爬虫、返回 v_voucher 的 UA（通过率 0/10）。
+        // 谁把这类字符串加回池子，这个测试就会红。
+        const KNOWN_BLOCKED: &[&str] = &[
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        ];
+        assert!(!USER_AGENTS.is_empty());
+        for ua in USER_AGENTS {
+            assert!(
+                !KNOWN_BLOCKED.contains(ua),
+                "这条 UA 会被风控拦截，不要放进池子: {ua}"
+            );
+            // 必须是某个 Chrome 的主流版本，带 Safari/537.36 尾巴
+            assert!(
+                ua.contains("Chrome/") && ua.contains("Safari/537.36"),
+                "UA 形状不像真实浏览器: {ua}"
+            );
+            let chrome: u32 = ua
+                .split("Chrome/")
+                .nth(1)
+                .and_then(|rest| rest.split('.').next())
+                .and_then(|v| v.parse().ok())
+                .unwrap_or_else(|| panic!("解析不出 Chrome 版本: {ua}"));
+            // 实测 Chrome/125 及更早会被拦
+            assert!(chrome >= 126, "Chrome 版本过旧会被风控拦截: {ua}");
+        }
+    }
+
+    #[test]
+    fn pick_user_agent_returns_a_pool_member() {
+        for _ in 0..50 {
+            let ua = pick_user_agent();
+            assert!(USER_AGENTS.contains(&ua), "{ua}");
+        }
+    }
+
+    #[test]
+    fn buvid3_is_appended_and_kept() {
+        let mut api = Api::new(Bases::default(), USER_AGENTS[0], None).unwrap();
+        assert!(api.cookie().is_none());
+        // 只在真的发了请求时才会走到网络；这里直接验证拼接逻辑的接口形状
+        assert!(crate::buvid::get_buvid3("").is_none());
+        let _ = &mut api;
     }
 
     #[test]

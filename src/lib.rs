@@ -4,6 +4,7 @@
 //! `bv`、`wbi`、`select`、`path` 是纯函数，不依赖网络。
 
 pub mod api;
+pub mod buvid;
 pub mod bv;
 pub mod cli;
 pub mod download;

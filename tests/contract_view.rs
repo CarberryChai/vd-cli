@@ -5,7 +5,7 @@ mod common;
 use common::{api_for, fixture_json, fixture_raw, init_tracing};
 use vd_cli::api::playurl::init_mixin_key;
 use vd_cli::error::Error;
-use wiremock::matchers::{method, path, query_param};
+use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test]
@@ -133,7 +133,7 @@ async fn view_without_owner_field_is_fine() {
 
 #[tokio::test]
 async fn view_sends_referer_and_fixed_ua() {
-    use wiremock::matchers::{header, header_exists};
+    use wiremock::matchers::header_exists;
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/x/web-interface/view"))
@@ -156,7 +156,6 @@ async fn view_sends_referer_and_fixed_ua() {
 
 #[tokio::test]
 async fn view_sends_cookie_when_provided() {
-    use wiremock::matchers::header;
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/x/web-interface/view"))
@@ -171,4 +170,91 @@ async fn view_sends_cookie_when_provided() {
 
     let api = common::api_for_with_cookie(&server, "SESSDATA=secret; bili_jct=token");
     assert_eq!(api.view(2).await.unwrap().pages.len(), 1);
+}
+
+#[tokio::test]
+async fn buvid3_is_fetched_and_attached_to_requests() {
+    init_tracing();
+    // 没有 buvid3 时 playurl 会返回风控响应，所以客户端要先从 spi 拿一个并带上
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/x/frontend/finger/spi"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "application/json")
+                .set_body_string(
+                    r#"{"code":0,"message":"ok","data":{"b_3":"B3VALUE","b_4":"B4VALUE"}}"#,
+                ),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/x/web-interface/view"))
+        .and(header("cookie", "buvid3=B3VALUE"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "application/json")
+                .set_body_string(fixture_raw("view_single.json")),
+        )
+        .mount(&server)
+        .await;
+
+    let mut api = api_for(&server);
+    assert_eq!(api.ensure_buvid3().await, "B3VALUE");
+    assert_eq!(api.cookie(), Some("buvid3=B3VALUE"));
+    // 后续请求必须带上它
+    assert_eq!(api.view(2).await.unwrap().pages.len(), 1);
+}
+
+#[tokio::test]
+async fn buvid3_falls_back_to_local_generation() {
+    init_tracing();
+    // spi 挂了也不能让整个流程失败，本地生成一个同样能过
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/x/frontend/finger/spi"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let mut api = api_for(&server);
+    let id = api.ensure_buvid3().await;
+    assert!(id.ends_with("infoc"), "{id}");
+    assert_eq!(id.len(), vd_cli::buvid::MAX_LEN);
+    assert_eq!(api.cookie(), Some(format!("buvid3={id}").as_str()));
+}
+
+#[tokio::test]
+async fn user_supplied_buvid3_is_not_overridden() {
+    let server = MockServer::start().await;
+    let mut api = common::api_for_with_cookie(&server, "SESSDATA=x; buvid3=USEROWN");
+    assert_eq!(api.ensure_buvid3().await, "USEROWN");
+    assert_eq!(api.cookie(), Some("SESSDATA=x; buvid3=USEROWN"));
+    // 没有向 spi 发请求（mock 没挂，挂了就会 404 => 这里靠断言 cookie 不变来证明）
+    assert!(
+        server
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn login_state_ignores_our_own_buvid3() {
+    // try_look 之类的判断必须看「用户有没有给 Cookie」，而不是我们自己补的 buvid3
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/x/frontend/finger/spi"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "application/json")
+                .set_body_string(r#"{"code":0,"data":{"b_3":"B3"}}"#),
+        )
+        .mount(&server)
+        .await;
+    let mut api = api_for(&server);
+    api.ensure_buvid3().await;
+    assert!(api.cookie().is_some(), "已经补上 buvid3");
+    assert!(api.user_cookie().is_none(), "但用户仍然是未登录状态");
 }
