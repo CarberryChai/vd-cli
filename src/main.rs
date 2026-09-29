@@ -47,6 +47,55 @@ fn init_tracing(verbose: bool) {
         .try_init();
 }
 
+/// 打印本机检测到的浏览器，以及哪个能读到 Cookie。
+///
+/// 这个子功能很有必要：macOS 上 Chrome 的目录默认被 TCC 保护，用户需要先知道
+/// 「是没装、还是没权限」，而不是看一个含糊的读取失败。
+fn list_browsers() {
+    use vd_cli::browser::Browser;
+    println!("本机浏览器检测：\n");
+    for browser in [
+        Browser::Chrome,
+        Browser::Chromium,
+        Browser::Brave,
+        Browser::Edge,
+        Browser::Vivaldi,
+        Browser::Opera,
+        Browser::Firefox,
+        Browser::Safari,
+    ] {
+        let Some(root) = browser.profile_root() else {
+            continue;
+        };
+        let name = browser.as_str();
+        if !root.exists() {
+            println!("  {name:10} 未安装");
+            continue;
+        }
+        if matches!(browser, Browser::Firefox | Browser::Safari) {
+            println!("  {name:10} 已安装（暂不支持自动读取，请用 --cookie）");
+            continue;
+        }
+        // 真正试探一下能不能读
+        match vd_cli::browser::load(browser, None) {
+            Ok(cookie) => {
+                let count = cookie.split(';').count();
+                println!("  {name:10} 可用（读到 {count} 个 bilibili.com Cookie）");
+            }
+            Err(err) => {
+                let reason = err
+                    .to_string()
+                    .lines()
+                    .next()
+                    .unwrap_or("未知错误")
+                    .to_string();
+                println!("  {name:10} 不可用：{reason}");
+            }
+        }
+    }
+    println!();
+}
+
 fn report(err: &Error) {
     eprintln!("error: {err}");
     for hint in err.hints() {
@@ -55,6 +104,12 @@ fn report(err: &Error) {
 }
 
 async fn run(cli: Cli) -> Result<u8> {
+    // --list-browsers：只做检测，不碰网络也不要求 ffmpeg
+    if cli.list_browsers {
+        list_browsers();
+        return Ok(0);
+    }
+
     // ---- 1. 参数与前置检查（退出码 2 / EX_FFMPEG 都在这一步暴露）----
     let pages_spec = PagesSpec::parse(&cli.pages)?;
     if !cli.quality_is_reachable() {
@@ -80,14 +135,26 @@ async fn run(cli: Cli) -> Result<u8> {
 
     // UA 在进程内固定
     let ua = vd_cli::api::pick_user_agent();
-    let mut api = Api::new(Bases::default(), ua, cli.cookie.as_deref())?;
+    let cookie = cli.resolve_cookie()?;
+    if cookie.is_some() {
+        tracing::debug!(
+            "使用 {} 来源的 Cookie",
+            if cli.cookie.is_some() {
+                "--cookie"
+            } else {
+                "--cookies-from-browser"
+            }
+        );
+    }
+    let mut api = Api::new(Bases::default(), ua, cookie.as_deref())?;
 
     // 取流接口要求带前端指纹 cookie buvid3，缺了会拿到风控响应（code: 0 + v_voucher）。
     // download 与 mux 都要用补齐后的 Cookie，所以必须在建这些之前做。
     api.ensure_buvid3().await;
 
     // ---- 2/3. resolve + 取任务列表 ----
-    let target = resolve_target(&api, &cli.input).await?;
+    let input = cli.input()?;
+    let target = resolve_target(&api, input).await?;
     let is_collection = matches!(target, Target::List { .. });
     let (container, all_pages, owner) = match target {
         Target::Video { aid } => {

@@ -98,6 +98,9 @@ pub enum Error {
     #[error("用户中断")]
     Interrupted,
 
+    #[error("读取浏览器 Cookie 失败: {0}")]
+    BrowserCookie(String),
+
     #[error("IO 错误: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -158,6 +161,7 @@ impl Clone for Error {
             Error::FfmpegFailed(s) => Error::FfmpegFailed(s.clone()),
             Error::FfmpegTimeout => Error::FfmpegTimeout,
             Error::Interrupted => Error::Interrupted,
+            Error::BrowserCookie(s) => Error::BrowserCookie(s.clone()),
             Error::Io(e) => Error::Io(std::io::Error::new(e.kind(), e.to_string())),
         }
     }

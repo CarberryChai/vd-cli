@@ -40,6 +40,9 @@ vd <URL|ID> [OPTIONS]
     --codec <C>          视频编码优先级: avc|hevc|av1 [默认: avc]
 -p, --pages <SPEC>       分P选择: all|1|1,3,5|1-5 [默认: all]
     --cookie <STR>       B 站 Cookie 字符串
+    --cookies-from-browser <B>   从本机浏览器读 Cookie（chrome|chromium|brave|edge|vivaldi|opera）
+    --browser-profile <NAME>     指定浏览器 profile（默认取最近活动的那个）
+    --list-browsers      列出检测到的浏览器与可读状态
     --no-mux             保留分离的 .mp4/.m4a，不调用 ffmpeg
     --dry-run            只解析并打印将要下载的内容，不实际下载
     --json               以 JSON 输出结果，便于脚本处理
@@ -103,8 +106,48 @@ vd --cookie "SESSDATA=xxx; bili_jct=yyy" -q 1080p BV1qt4y1X7TW
 vd "https://space.bilibili.com/23630128/channel/collectiondetail?sid=2045"
 ```
 
-Cookie 从浏览器的开发者工具里复制：登录 B 站后打开任意页面，在 Network 面板里
-找一个 `api.bilibili.com` 请求，复制请求头 `Cookie` 的完整值。
+### Cookie：解锁高清
+
+未登录时清晰度通常只有 480P 左右。两种方式拿到登录态：
+
+**方式一：直接从本机浏览器读**（推荐，不用手动复制）
+
+```bash
+vd --list-browsers                                  # 先看哪个浏览器能读
+vd --cookies-from-browser chrome BV1qt4y1X7TW       # 直接下载
+vd --cookies-from-browser chrome --browser-profile "Profile 1" BV1...   # 多账号时指定 profile
+```
+
+支持 chrome / chromium / brave / edge / vivaldi / opera。默认取**最近活动**的 profile，
+也就是你平时在用的那个。
+
+**方式二：手动传**
+
+登录 B 站后打开任意页面，在开发者工具 Network 面板里找一个 `api.bilibili.com` 请求，
+复制请求头 `Cookie` 的完整值：
+
+```bash
+vd --cookie "SESSDATA=xxx; bili_jct=yyy" -q 1080p BV1qt4y1X7TW
+```
+
+`--cookie` 与 `--cookies-from-browser` 不能同时用（会直接被参数解析拒绝）。
+
+#### macOS：需要「完全磁盘访问」
+
+macOS 会保护浏览器数据目录，没有权限时报 `Operation not permitted`。开启方式：
+
+```
+系统设置 → 隐私与安全性 → 完全磁盘访问权限 → 打开开关并勾选你的终端 →
+完全退出终端（⌘Q）后重新打开
+```
+
+在 Codex / ChatGPT 里运行时，要授权的是**启动它的那个 App**，不是终端。
+
+解密 Cookie 还需要访问钥匙串里的 `<浏览器> Safe Storage` 条目，第一次会弹授权框，
+选「允许」即可。授权不了也可以用 `--cookie` 退回手动方式。
+
+Firefox 与 Safari 暂不支持自动读取（前者加密方式不同，后者是受保护的二进制格式），
+用 `--cookie` 传即可。
 
 ## 工作原理
 
@@ -125,6 +168,9 @@ view(aid) / medialist(biz_id)  →  VideoInfo / ListInfo（标题 + 分 P 列表
 
 一些实现上的取舍：
 
+- **浏览器 Cookie**：Chromium 系把值用 `v10` 前缀的 AES-128-CBC 加密，密钥由
+  PBKDF2-SHA1(1003 轮, salt `"saltysalt"`) 从钥匙串口令派生；读取前先把库复制一份，
+  避免和运行中的浏览器争锁。
 - **`buvid3` 前端指纹**：B 站的取流接口要求请求带这个 cookie，缺了会拿到
   `code: 0` + 只有 `data.v_voucher` 的风控响应（实测约 4/5 被拦）。程序启动时
   先问 `x/frontend/finger/spi` 要一个，失败就本地按同样格式生成；用户自己在
@@ -183,6 +229,8 @@ src/
 ├── bv.rs            # BV 号 ↔ av 号          （纯函数）
 ├── wbi.rs           # WBI 密钥派生 + 签名    （纯函数）
 ├── resolve.rs       # 输入 → Target          （纯函数 + b23.tv 跟随）
+├── browser.rs       # 从本机浏览器读 Cookie  （读库 + 解密）
+├── buvid.rs         # buvid3 指纹            （纯函数）
 ├── model.rs         # Page / Track / 清晰度表
 ├── select.rs        # 轨道选择               （纯函数）
 ├── path.rs          # 输出路径 + 文件名净化  （纯函数）

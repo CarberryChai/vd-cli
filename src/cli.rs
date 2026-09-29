@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
 
+use crate::browser::{self, Browser};
 use crate::error::{Error, Result};
 use crate::model::{Codec, QUALITY_MAP};
 use crate::select::Prefs;
@@ -29,8 +30,10 @@ pub const DEFAULT_FNVAL: u32 = 4048;
 )]
 pub struct Cli {
     /// 视频链接、BV 号、av 号，或合集/系列链接
+    ///
+    /// 只有 `--list-browsers` 时可以不写。
     #[arg(value_name = "URL|ID")]
-    pub input: String,
+    pub input: Option<String>,
 
     /// 输出目录
     #[arg(short, long, value_name = "DIR", default_value = ".")]
@@ -49,8 +52,20 @@ pub struct Cli {
     pub pages: String,
 
     /// B 站 Cookie 字符串，用于解锁登录后才能拿到的高清档位
-    #[arg(long, value_name = "STR")]
+    #[arg(long, value_name = "STR", conflicts_with = "cookies_from_browser")]
     pub cookie: Option<String>,
+
+    /// 直接从本机浏览器的 Cookie 里读（chrome|chromium|brave|edge|vivaldi|opera）
+    #[arg(long, value_name = "BROWSER")]
+    pub cookies_from_browser: Option<String>,
+
+    /// 指定浏览器 profile，默认用最近活动的那个（如 "Default"、"Profile 1"）
+    #[arg(long, value_name = "NAME", requires = "cookies_from_browser")]
+    pub browser_profile: Option<String>,
+
+    /// 列出本机检测到的浏览器与可读状态，然后退出
+    #[arg(long)]
+    pub list_browsers: bool,
 
     /// 保留分离的 .mp4/.m4a，不调用 ffmpeg
     #[arg(long)]
@@ -237,6 +252,41 @@ fn parse_index(s: &str, whole: &str) -> Result<u32> {
 }
 
 impl Cli {
+    /// 解析 `--cookies-from-browser` 的取值。
+    pub fn browser(&self) -> Result<Option<Browser>> {
+        let Some(name) = self.cookies_from_browser.as_deref() else {
+            return Ok(None);
+        };
+        Browser::parse(name).map(Some).ok_or_else(|| {
+            Error::BadArgs(format!(
+                "无法识别的浏览器 \"{name}\"；可选: chrome, chromium, brave, edge, vivaldi, opera"
+            ))
+        })
+    }
+
+    /// 把 Cookie 解析结果收敛成最终要用的 Cookie 串。
+    ///
+    /// 优先级：`--cookie` > `--cookies-from-browser`。两者同时给会被 clap 拦掉。
+    pub fn resolve_cookie(&self) -> Result<Option<String>> {
+        if let Some(cookie) = &self.cookie {
+            return Ok(Some(cookie.clone()));
+        }
+        match self.browser()? {
+            Some(browser) => Ok(Some(browser::load(
+                browser,
+                self.browser_profile.as_deref(),
+            )?)),
+            None => Ok(None),
+        }
+    }
+
+    /// 取位置参数；缺失时给出参数错误（退出码 2）。
+    pub fn input(&self) -> Result<&str> {
+        self.input
+            .as_deref()
+            .ok_or_else(|| Error::BadArgs("需要提供视频链接、BV 号、av 号，或合集/系列链接".into()))
+    }
+
     pub fn prefs(&self) -> Prefs {
         Prefs {
             quality_limit: self.quality.limit(),
@@ -327,6 +377,58 @@ mod tests {
         for bad in ["", "0", "-1", "1-", "-2", "a", "1,", "1-a", "3-1"] {
             assert!(PagesSpec::parse(bad).is_err(), "\"{bad}\" 应当被拒绝");
         }
+    }
+
+    #[test]
+    fn browser_flag_parsing() {
+        let cli = Cli::parse_from(["vd", "x"]);
+        assert_eq!(cli.browser().unwrap(), None);
+
+        let cli = Cli::parse_from(["vd", "x", "--cookies-from-browser", "chrome"]);
+        assert_eq!(cli.browser().unwrap(), Some(Browser::Chrome));
+
+        let cli = Cli::parse_from(["vd", "x", "--cookies-from-browser", "Edge"]);
+        assert_eq!(cli.browser().unwrap(), Some(Browser::Edge));
+
+        let cli = Cli::parse_from(["vd", "x", "--cookies-from-browser", "netscape"]);
+        let err = cli.browser().unwrap_err();
+        assert!(matches!(err, Error::BadArgs(_)), "{err}");
+        assert!(err.to_string().contains("chrome, chromium"), "{err}");
+    }
+
+    #[test]
+    fn explicit_cookie_wins_and_conflicts_are_rejected() {
+        let cli = Cli::parse_from(["vd", "x", "--cookie", "SESSDATA=abc"]);
+        assert_eq!(
+            cli.resolve_cookie().unwrap().as_deref(),
+            Some("SESSDATA=abc")
+        );
+
+        // 两个来源同时给应当被参数解析直接拒绝
+        let err = Cli::try_parse_from([
+            "vd",
+            "x",
+            "--cookie",
+            "SESSDATA=abc",
+            "--cookies-from-browser",
+            "chrome",
+        ])
+        .unwrap_err();
+        assert_eq!(
+            err.kind(),
+            clap::error::ErrorKind::ArgumentConflict,
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn browser_profile_requires_browser_flag() {
+        let err = Cli::try_parse_from(["vd", "x", "--browser-profile", "Default"]).unwrap_err();
+        assert_eq!(
+            err.kind(),
+            clap::error::ErrorKind::MissingRequiredArgument,
+            "{err}"
+        );
     }
 
     #[test]
