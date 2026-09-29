@@ -225,3 +225,53 @@ fn end_to_end_round_trip_through_the_real_decryptor() {
         Some("SESSDATA-value-xyz")
     );
 }
+
+#[test]
+fn auto_order_prefers_chrome_first() {
+    // 用户要求的默认是 chrome；顺序不能悄悄改
+    assert_eq!(vd_cli::browser::AUTO_ORDER[0], Browser::Chrome);
+    // 不支持自动读取的浏览器不该出现在自动列表里
+    assert!(!vd_cli::browser::AUTO_ORDER.contains(&Browser::Firefox));
+    assert!(!vd_cli::browser::AUTO_ORDER.contains(&Browser::Safari));
+    // 不重复
+    let mut seen = std::collections::HashSet::new();
+    for b in vd_cli::browser::AUTO_ORDER {
+        assert!(seen.insert(*b), "AUTO_ORDER 里有重复: {}", b.as_str());
+    }
+}
+
+#[test]
+fn automatic_mode_is_graceful_when_nothing_is_readable() {
+    // 这台机器上要么没有 Chrome，要么被 TCC 拦住；auto 必须**不 panic** 且给出可读错误，
+    // 由调用方降级为未登录状态。
+    match vd_cli::browser::load_auto(None) {
+        Ok((browser, cookie)) => {
+            // 读到了：必须是受支持的浏览器，且只含 bilibili 的 Cookie
+            assert!(vd_cli::browser::AUTO_ORDER.contains(&browser));
+            assert!(cookie.contains('=') || cookie.is_empty());
+        }
+        Err(err) => {
+            let msg = err.to_string();
+            assert!(!msg.is_empty());
+            assert!(
+                msg.contains("读不到 Cookie")
+                    || msg.contains("没有检测到")
+                    || msg.contains("没找到"),
+                "错误应当说明是哪个浏览器、为什么: {msg}"
+            );
+        }
+    }
+}
+
+#[test]
+fn load_auto_reports_the_error_of_its_first_choice() {
+    // 这里只验证「自动模式失败时的报错不会含糊」：在有 Chrome 目录但读不了的机器上，
+    // 报的应该是 chrome 而不是列表末尾的 opera。
+    if let Err(err) = vd_cli::browser::load_auto(None) {
+        let msg = err.to_string();
+        assert!(
+            !msg.starts_with("opera"),
+            "应当优先报列表靠前的浏览器（chrome/edge/...）: {msg}"
+        );
+    }
+}

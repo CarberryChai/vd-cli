@@ -93,6 +93,16 @@ fn list_browsers() {
             }
         }
     }
+    // 说明默认的 auto 模式会选谁
+    match vd_cli::browser::load_auto(None) {
+        Ok((browser, _)) => println!(
+            "默认（--cookies-from-browser auto）会使用：{}",
+            browser.as_str()
+        ),
+        Err(e) => {
+            println!("默认（--cookies-from-browser auto）当前读不到，会以降级方式继续：\n  {e}")
+        }
+    }
     println!();
 }
 
@@ -135,17 +145,8 @@ async fn run(cli: Cli) -> Result<u8> {
 
     // UA 在进程内固定
     let ua = vd_cli::api::pick_user_agent();
-    let cookie = cli.resolve_cookie()?;
-    if cookie.is_some() {
-        tracing::debug!(
-            "使用 {} 来源的 Cookie",
-            if cli.cookie.is_some() {
-                "--cookie"
-            } else {
-                "--cookies-from-browser"
-            }
-        );
-    }
+    let (cookie, cookie_source) = cli.resolve_cookie()?;
+    tracing::debug!("Cookie 来源: {cookie_source}");
     let mut api = Api::new(Bases::default(), ua, cookie.as_deref())?;
 
     // 取流接口要求带前端指纹 cookie buvid3，缺了会拿到风控响应（code: 0 + v_voucher）。

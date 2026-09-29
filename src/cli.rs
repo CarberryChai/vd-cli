@@ -55,12 +55,17 @@ pub struct Cli {
     #[arg(long, value_name = "STR", conflicts_with = "cookies_from_browser")]
     pub cookie: Option<String>,
 
-    /// 直接从本机浏览器的 Cookie 里读（chrome|chromium|brave|edge|vivaldi|opera）
-    #[arg(long, value_name = "BROWSER")]
-    pub cookies_from_browser: Option<String>,
+    /// 从本机浏览器读 Cookie；默认 auto 会自动挑一个能读的
+    /// （auto|chrome|chromium|brave|edge|vivaldi|opera）
+    #[arg(long, value_name = "BROWSER", default_value = "auto")]
+    pub cookies_from_browser: String,
+
+    /// 不去读浏览器 Cookie，只用未登录状态（或 --cookie）
+    #[arg(long, conflicts_with = "cookie")]
+    pub no_cookies_from_browser: bool,
 
     /// 指定浏览器 profile，默认用最近活动的那个（如 "Default"、"Profile 1"）
-    #[arg(long, value_name = "NAME", requires = "cookies_from_browser")]
+    #[arg(long, value_name = "NAME")]
     pub browser_profile: Option<String>,
 
     /// 列出本机检测到的浏览器与可读状态，然后退出
@@ -252,31 +257,55 @@ fn parse_index(s: &str, whole: &str) -> Result<u32> {
 }
 
 impl Cli {
-    /// 解析 `--cookies-from-browser` 的取值。
+    /// 解析 `--cookies-from-browser` 的取值。`auto` 返回 `None`（走自动挑选）。
     pub fn browser(&self) -> Result<Option<Browser>> {
-        let Some(name) = self.cookies_from_browser.as_deref() else {
+        let name = self.cookies_from_browser.trim();
+        if name.eq_ignore_ascii_case("auto") {
             return Ok(None);
-        };
+        }
         Browser::parse(name).map(Some).ok_or_else(|| {
             Error::BadArgs(format!(
-                "无法识别的浏览器 \"{name}\"；可选: chrome, chromium, brave, edge, vivaldi, opera"
+                "无法识别的浏览器 \"{name}\"；可选: auto, chrome, chromium, brave, edge, vivaldi, opera"
             ))
         })
     }
 
-    /// 把 Cookie 解析结果收敛成最终要用的 Cookie 串。
+    /// 把 Cookie 解析结果收敛成最终要用的 Cookie 串，并说明来源（用于日志）。
     ///
-    /// 优先级：`--cookie` > `--cookies-from-browser`。两者同时给会被 clap 拦掉。
-    pub fn resolve_cookie(&self) -> Result<Option<String>> {
+    /// 优先级：
+    /// 1. `--cookie` 直接给定
+    /// 2. `--no-cookies-from-browser` 明确不读浏览器
+    /// 3. `--cookies-from-browser <名字>`：读它，失败就报错（用户明确点名了）
+    /// 4. `--cookies-from-browser auto`（默认）：自动挑一个能读的；都读不出来就
+    ///    降级为未登录并打警告，而不是让命令失败
+    pub fn resolve_cookie(&self) -> Result<(Option<String>, String)> {
         if let Some(cookie) = &self.cookie {
-            return Ok(Some(cookie.clone()));
+            return Ok((Some(cookie.clone()), "--cookie".into()));
         }
-        match self.browser()? {
-            Some(browser) => Ok(Some(browser::load(
-                browser,
-                self.browser_profile.as_deref(),
-            )?)),
-            None => Ok(None),
+        if self.no_cookies_from_browser {
+            return Ok((None, "未登录（--no-cookies-from-browser）".into()));
+        }
+        if let Some(browser) = self.browser()? {
+            // 明确指定了浏览器：读不出来就是错误，用户需要知道
+            let cookie = browser::load(browser, self.browser_profile.as_deref())?;
+            return Ok((Some(cookie), format!("{} 的 Cookie", browser.as_str())));
+        }
+        // auto：能读就读，读不到降级
+        match browser::load_auto(self.browser_profile.as_deref()) {
+            Ok((browser, cookie)) => Ok((
+                Some(cookie),
+                format!("{} 的 Cookie（自动选择）", browser.as_str()),
+            )),
+            Err(e) => {
+                // 自动读取失败不致命：降级为未登录，但把原因和下一步说清楚
+                // e 自己就是完整一句（含哪个浏览器、为什么）
+                tracing::warn!("{e}");
+                tracing::warn!(
+                    "继续用未登录状态（清晰度通常最高只有 480P）；\
+                     手动传 --cookie 可解锁高清，或用 vd --list-browsers 看各浏览器的读取情况"
+                );
+                Ok((None, "未登录（自动读取浏览器 Cookie 失败）".into()))
+            }
         }
     }
 
@@ -380,38 +409,49 @@ mod tests {
     }
 
     #[test]
-    fn browser_flag_parsing() {
+    fn browsers_flag_defaults_to_auto() {
+        // 不传 --cookies-from-browser 时应当默认自动挑选，而不是「不读 Cookie」
         let cli = Cli::parse_from(["vd", "x"]);
+        assert_eq!(cli.cookies_from_browser, "auto");
         assert_eq!(cli.browser().unwrap(), None);
+    }
 
+    #[test]
+    fn browser_flag_parsing() {
         let cli = Cli::parse_from(["vd", "x", "--cookies-from-browser", "chrome"]);
         assert_eq!(cli.browser().unwrap(), Some(Browser::Chrome));
 
         let cli = Cli::parse_from(["vd", "x", "--cookies-from-browser", "Edge"]);
         assert_eq!(cli.browser().unwrap(), Some(Browser::Edge));
 
+        // auto 大小写不敏感
+        for auto in ["auto", "AUTO", " Auto "] {
+            let cli = Cli::parse_from(["vd", "x", "--cookies-from-browser", auto]);
+            assert_eq!(cli.browser().unwrap(), None, "{auto}");
+        }
+
         let cli = Cli::parse_from(["vd", "x", "--cookies-from-browser", "netscape"]);
         let err = cli.browser().unwrap_err();
         assert!(matches!(err, Error::BadArgs(_)), "{err}");
-        assert!(err.to_string().contains("chrome, chromium"), "{err}");
+        assert!(err.to_string().contains("auto, chrome"), "{err}");
     }
 
     #[test]
-    fn explicit_cookie_wins_and_conflicts_are_rejected() {
+    fn explicit_cookie_wins() {
         let cli = Cli::parse_from(["vd", "x", "--cookie", "SESSDATA=abc"]);
-        assert_eq!(
-            cli.resolve_cookie().unwrap().as_deref(),
-            Some("SESSDATA=abc")
-        );
+        let (cookie, source) = cli.resolve_cookie().unwrap();
+        assert_eq!(cookie.as_deref(), Some("SESSDATA=abc"));
+        assert_eq!(source, "--cookie");
+    }
 
-        // 两个来源同时给应当被参数解析直接拒绝
+    #[test]
+    fn cookie_and_no_cookies_conflict() {
         let err = Cli::try_parse_from([
             "vd",
             "x",
             "--cookie",
             "SESSDATA=abc",
-            "--cookies-from-browser",
-            "chrome",
+            "--no-cookies-from-browser",
         ])
         .unwrap_err();
         assert_eq!(
@@ -422,13 +462,20 @@ mod tests {
     }
 
     #[test]
-    fn browser_profile_requires_browser_flag() {
-        let err = Cli::try_parse_from(["vd", "x", "--browser-profile", "Default"]).unwrap_err();
-        assert_eq!(
-            err.kind(),
-            clap::error::ErrorKind::MissingRequiredArgument,
-            "{err}"
-        );
+    fn no_cookies_flag_skips_the_browser_entirely() {
+        // 显式不读浏览器时，不该去碰磁盘或钥匙串
+        let cli = Cli::parse_from(["vd", "x", "--no-cookies-from-browser"]);
+        let (cookie, source) = cli.resolve_cookie().unwrap();
+        assert_eq!(cookie, None);
+        assert!(source.contains("--no-cookies-from-browser"), "{source}");
+    }
+
+    #[test]
+    fn browser_profile_can_be_used_with_auto() {
+        // auto 模式下也可以指定 profile
+        let cli = Cli::parse_from(["vd", "x", "--browser-profile", "Profile 1"]);
+        assert_eq!(cli.browser_profile.as_deref(), Some("Profile 1"));
+        assert_eq!(cli.cookies_from_browser, "auto");
     }
 
     #[test]

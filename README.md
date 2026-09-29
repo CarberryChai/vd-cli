@@ -40,7 +40,9 @@ vd <URL|ID> [OPTIONS]
     --codec <C>          视频编码优先级: avc|hevc|av1 [默认: avc]
 -p, --pages <SPEC>       分P选择: all|1|1,3,5|1-5 [默认: all]
     --cookie <STR>       B 站 Cookie 字符串
-    --cookies-from-browser <B>   从本机浏览器读 Cookie（chrome|chromium|brave|edge|vivaldi|opera）
+    --cookies-from-browser <B>   从本机浏览器读 Cookie [默认: auto]
+                                 auto|chrome|chromium|brave|edge|vivaldi|opera
+    --no-cookies-from-browser    不读浏览器 Cookie，只用未登录状态
     --browser-profile <NAME>     指定浏览器 profile（默认取最近活动的那个）
     --list-browsers      列出检测到的浏览器与可读状态
     --no-mux             保留分离的 .mp4/.m4a，不调用 ffmpeg
@@ -110,16 +112,22 @@ vd "https://space.bilibili.com/23630128/channel/collectiondetail?sid=2045"
 
 未登录时清晰度通常只有 480P 左右。两种方式拿到登录态：
 
-**方式一：直接从本机浏览器读**（推荐，不用手动复制）
+**方式一：直接从本机浏览器读**（默认开启，什么都不用加）
 
 ```bash
-vd --list-browsers                                  # 先看哪个浏览器能读
-vd --cookies-from-browser chrome BV1qt4y1X7TW       # 直接下载
-vd --cookies-from-browser chrome --browser-profile "Profile 1" BV1...   # 多账号时指定 profile
+vd BV1qt4y1X7TW                                     # 默认就是 --cookies-from-browser auto
+vd --cookies-from-browser chrome BV1qt4y1X7TW       # 指定浏览器（读不到就报错，不静默降级）
+vd --browser-profile "Profile 1" BV1...             # 多账号时指定 profile
+vd --no-cookies-from-browser BV1...                 # 明确不读浏览器
+vd --list-browsers                                  # 看哪个浏览器能读、auto 会选谁
 ```
 
-支持 chrome / chromium / brave / edge / vivaldi / opera。默认取**最近活动**的 profile，
-也就是你平时在用的那个。
+默认 `auto` 按 **chrome → edge → brave → vivaldi → chromium → opera** 的顺序挑第一个能读的。
+读不到时**不会失败**，而是打一条警告并以未登录状态继续（清晰度通常最高 480P）——
+这样刚装上去、还没配好权限的机器也能跑通。想让它读不到就报错，就显式写
+`--cookies-from-browser chrome`。
+
+profile 默认取**最近活动**的那个，也就是你平时在用的。
 
 **方式二：手动传**
 
@@ -130,7 +138,8 @@ vd --cookies-from-browser chrome --browser-profile "Profile 1" BV1...   # 多账
 vd --cookie "SESSDATA=xxx; bili_jct=yyy" -q 1080p BV1qt4y1X7TW
 ```
 
-`--cookie` 与 `--cookies-from-browser` 不能同时用（会直接被参数解析拒绝）。
+`--cookie` 与 `--cookies-from-browser`/`--no-cookies-from-browser` 不能同时用
+（会直接被参数解析拒绝）。
 
 #### macOS：需要「完全磁盘访问」
 

@@ -27,6 +27,8 @@ fn run_vd(server: &MockServer, args: &[&str]) -> Output {
         .args(args)
         .env("VD_API_BASE", server.uri())
         .env("VD_WEB_BASE", server.uri())
+        // 不继承调用者的 RUST_LOG，否则日志级别会影响断言
+        .env("RUST_LOG", "warn")
         .output()
         .expect("运行 vd 二进制");
     Output {
@@ -532,5 +534,198 @@ async fn no_mux_keeps_separate_tracks() {
             "字幕君交流场所.mp4".to_string()
         ],
         "--no-mux 应当保留分离的 .mp4 与 .m4a"
+    );
+}
+
+/// 匹配「Cookie 头里包含某段子串」。
+///
+/// 不能用 wiremock 的 `header(k, v)`：那是全等匹配，而客户端还会补上 buvid3。
+struct CookieContains(&'static str);
+
+impl wiremock::Match for CookieContains {
+    fn matches(&self, request: &wiremock::Request) -> bool {
+        request
+            .headers
+            .get("cookie")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.contains(self.0))
+    }
+}
+
+/// 造一个假 Chrome profile，里面放明文 Cookie（明文不需要钥匙串，测试才能脱离授权跑）。
+fn fake_chrome_home(cookies: &[(&str, &str)]) -> tempfile::TempDir {
+    let home = tempfile::tempdir().unwrap();
+    let profile = home
+        .path()
+        .join("Library/Application Support/Google/Chrome/Default");
+    std::fs::create_dir_all(&profile).unwrap();
+    let db = profile.join("Cookies");
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE cookies (host_key TEXT, name TEXT, value TEXT, encrypted_value BLOB);",
+    )
+    .unwrap();
+    for (name, value) in cookies {
+        conn.execute(
+            "INSERT INTO cookies VALUES ('.bilibili.com', ?1, ?2, x'')",
+            rusqlite::params![name, value],
+        )
+        .unwrap();
+    }
+    drop(conn);
+    home
+}
+
+/// 跑 vd，并覆盖 HOME（让浏览器探测指向我们的假 profile）。
+fn run_vd_with_home(server: &MockServer, home: &std::path::Path, args: &[&str]) -> Output {
+    run_vd_with_home_log(server, home, args, None)
+}
+
+/// 同上，并可指定日志级别。
+///
+/// 必须显式设置 `RUST_LOG`：外层环境里的值会被子进程继承，测试不能依赖调用者的环境。
+fn run_vd_with_home_log(
+    server: &MockServer,
+    home: &std::path::Path,
+    args: &[&str],
+    log: Option<&str>,
+) -> Output {
+    let out = Command::new(env!("CARGO_BIN_EXE_vd"))
+        .args(args)
+        .env("VD_API_BASE", server.uri())
+        .env("VD_WEB_BASE", server.uri())
+        .env("HOME", home)
+        .env("RUST_LOG", log.unwrap_or("warn"))
+        .output()
+        .expect("运行 vd");
+    Output {
+        code: out.status.code(),
+        stdout: String::from_utf8_lossy(&out.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&out.stderr).to_string(),
+    }
+}
+
+#[tokio::test]
+async fn default_mode_reads_cookies_from_the_browser() {
+    init_tracing();
+    let server = MockServer::start().await;
+    // 只有带上浏览器里的 Cookie，view 才会命中这个 mock
+    Mock::given(method("GET"))
+        .and(path("/x/web-interface/view"))
+        .and(CookieContains("SESSDATA=from-browser; bili_jct=jct-value"))
+        .respond_with(json_response(fixture_raw("view_single.json")))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/x/web-interface/nav"))
+        .respond_with(json_response(fixture_raw("nav_anonymous.json")))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/x/player/wbi/playurl"))
+        .respond_with(json_response(fixture_raw("playurl_dash.json")))
+        .mount(&server)
+        .await;
+
+    let home = fake_chrome_home(&[("SESSDATA", "from-browser"), ("bili_jct", "jct-value")]);
+
+    // 默认（不传 --cookies-from-browser）就该读到浏览器的 Cookie
+    let out = run_vd_with_home(&server, home.path(), &["--dry-run", "--json", "av2"]);
+    assert_eq!(out.code, Some(0), "stderr: {}", out.stderr);
+    let parsed: Value = serde_json::from_str(out.stdout.trim()).unwrap();
+    assert_eq!(parsed["succeeded"], 1);
+
+    // 并且 -v 时日志里说清了来源。
+    // 注意 RUST_LOG 要同时覆盖二进制（vd）与库（vd_cli）：main.rs 里的日志属于前者。
+    let out = run_vd_with_home_log(
+        &server,
+        home.path(),
+        &["--dry-run", "av2"],
+        Some("vd=debug,vd_cli=debug"),
+    );
+    assert_eq!(out.code, Some(0), "stderr: {}", out.stderr);
+    assert!(
+        out.stderr.contains("Cookie 来源") && out.stderr.contains("自动选择"),
+        "应当说明 Cookie 来源: {}",
+        out.stderr
+    );
+}
+
+#[tokio::test]
+async fn no_cookies_flag_omits_the_cookie_header() {
+    init_tracing();
+    let server = MockServer::start().await;
+    // 这个 mock 只在**没有** Cookie 时命中
+    Mock::given(method("GET"))
+        .and(path("/x/web-interface/view"))
+        .respond_with(json_response(fixture_raw("view_single.json")))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/x/web-interface/nav"))
+        .respond_with(json_response(fixture_raw("nav_anonymous.json")))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/x/player/wbi/playurl"))
+        .respond_with(json_response(fixture_raw("playurl_dash.json")))
+        .mount(&server)
+        .await;
+
+    let home = fake_chrome_home(&[("SESSDATA", "from-browser")]);
+    let out = run_vd_with_home(
+        &server,
+        home.path(),
+        &["--no-cookies-from-browser", "--dry-run", "av2"],
+    );
+    assert_eq!(out.code, Some(0), "stderr: {}", out.stderr);
+
+    // view 请求里不该出现 SESSDATA
+    let view = server
+        .received_requests()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|r| r.url.path() == "/x/web-interface/view")
+        .expect("应当请求过 view");
+    let cookie = view
+        .headers
+        .get("cookie")
+        .map(|v| v.to_str().unwrap_or(""))
+        .unwrap_or("");
+    assert!(
+        !cookie.contains("SESSDATA"),
+        "--no-cookies-from-browser 却带了登录 Cookie: {cookie}"
+    );
+}
+
+#[tokio::test]
+async fn explicit_browser_that_cannot_be_read_is_a_hard_error() {
+    init_tracing();
+    let server = MockServer::start().await;
+    let home = tempfile::tempdir().unwrap(); // 空 HOME：没有任何浏览器
+    // 显式点名了浏览器，读不到就该报错，而不是静默降级
+    let out = run_vd_with_home(
+        &server,
+        home.path(),
+        &["--cookies-from-browser", "chrome", "--dry-run", "av2"],
+    );
+    assert_eq!(out.code, Some(1), "stderr: {}", out.stderr);
+    assert!(out.stderr.contains("chrome"), "{}", out.stderr);
+}
+
+#[tokio::test]
+async fn auto_mode_degrades_gracefully_when_nothing_is_readable() {
+    init_tracing();
+    let server = MockServer::start().await;
+    mount_single_video(&server).await;
+    let home = tempfile::tempdir().unwrap(); // 空 HOME
+    // 默认 auto：读不到也要能跑，只是警告 + 未登录
+    let out = run_vd_with_home(&server, home.path(), &["--dry-run", "--json", "av2"]);
+    assert_eq!(out.code, Some(0), "stderr: {}", out.stderr);
+    assert!(
+        out.stderr.contains("未登录") || out.stderr.contains("浏览器"),
+        "应当提示已降级: {}",
+        out.stderr
     );
 }

@@ -98,7 +98,9 @@ pub enum Error {
     #[error("用户中断")]
     Interrupted,
 
-    #[error("读取浏览器 Cookie 失败: {0}")]
+    /// 文案由构造点自己写完整（每个构造点都带「哪个浏览器 / 为什么」），
+    /// 这里不再加统一前缀，否则会叠出"读取浏览器 Cookie 失败: ... 读取浏览器 Cookie 失败: ..."
+    #[error("{0}")]
     BrowserCookie(String),
 
     #[error("IO 错误: {0}")]

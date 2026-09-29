@@ -13,7 +13,7 @@ use std::process::Command;
 use crate::error::{Error, Result};
 
 /// 支持自动读取的浏览器。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Browser {
     Chrome,
     Chromium,
@@ -106,12 +106,76 @@ fn dirs_home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
+/// 自动模式下的浏览器优先顺序。
+///
+/// Chrome 排第一（用户请求的默认），后面是常见的 Chromium 系。
+/// Firefox / Safari 不在列表里——它们暂不支持自动读取。
+pub const AUTO_ORDER: &[Browser] = &[
+    Browser::Chrome,
+    Browser::Edge,
+    Browser::Brave,
+    Browser::Vivaldi,
+    Browser::Chromium,
+    Browser::Opera,
+];
+
+/// 自动挑一个能读出 B 站 Cookie 的浏览器。
+///
+/// 按 `AUTO_ORDER` 顺序尝试，第一个成功的就是结果。全都读不出来时返回**优先级最高
+/// 的那个错误**（也就是列表里第一个装了却读不出来的浏览器的错误）——用户最可能关心
+/// 的正是它，报最后一个（往往是个没登录过的浏览器）只会误导。
+pub fn load_auto(profile: Option<&str>) -> Result<(Browser, String)> {
+    let mut first_error: Option<(Browser, Error)> = None;
+    let mut tried = 0usize;
+    for &browser in AUTO_ORDER {
+        // 只看装了的浏览器，避免无谓的系统调用
+        let Some(root) = browser.profile_root() else {
+            continue;
+        };
+        if !root.exists() {
+            continue;
+        }
+        tried += 1;
+        match load_from_root(browser, &root, profile) {
+            Ok(cookie) => {
+                tracing::debug!("自动选中 {} 的 Cookie", browser.as_str());
+                return Ok((browser, cookie));
+            }
+            Err(e) => {
+                tracing::debug!("{} 读 Cookie 失败: {e}", browser.as_str());
+                first_error.get_or_insert((browser, e));
+            }
+        }
+    }
+    match first_error {
+        Some((browser, e)) => {
+            tracing::debug!("自动模式下试过 {tried} 个浏览器，都没读出来");
+            Err(Error::BrowserCookie(format!(
+                "{} 读不到 Cookie：{e}",
+                browser.as_str()
+            )))
+        }
+        None => Err(Error::BrowserCookie(
+            "本机没有检测到可读取 Cookie 的浏览器（支持 Chrome / Chromium / Brave / \
+             Edge / Vivaldi / Opera）；请用 --cookie 手动传入"
+                .into(),
+        )),
+    }
+}
+
 /// 从浏览器里取出 B 站相关的 Cookie，拼成请求头用的字符串。
 pub fn load(browser: Browser, profile: Option<&str>) -> Result<String> {
     let root = browser
         .profile_root()
         .ok_or_else(|| Error::BrowserCookie(format!("找不到 {} 的配置目录", browser.as_str())))?;
-    load_from_root(browser, &root, profile)
+    load_from_root(browser, &root, profile).map_err(|e| match e {
+        // 「哪个浏览器」要出现在错误里，否则单看消息不知道是谁的问题。
+        // 用前缀判断避免重复套娃。
+        Error::BrowserCookie(msg) if !msg.starts_with(browser.as_str()) => {
+            Error::BrowserCookie(format!("{} 读 Cookie 失败：{msg}", browser.as_str()))
+        }
+        other => other,
+    })
 }
 
 /// 同 `load`，但配置目录由调用方给定（测试用）。密钥仍从钥匙串取。
